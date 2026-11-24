@@ -398,6 +398,27 @@ mod tests {
     use tuirealm::ratatui::{Terminal, backend::TestBackend};
 
     #[test]
+    fn scrollbar_reaches_the_last_row_in_both_views() -> Result<()> {
+        let root = Path::new(".");
+        let mut ui = Browser::default();
+        for i in 0..32 {
+            let path = root.join(i.to_string());
+            ui.scan.bytes.insert(path.clone(), 1);
+            ui.scan.targets.push(path);
+        }
+        for tree in [false, true] {
+            ui.tree_view = tree;
+            let mut terminal = Terminal::new(TestBackend::new(80, 16))?;
+            for (cursor, row) in [(0, 2), (31, 12)] {
+                ui.cursor = cursor;
+                terminal.draw(|f| ui.draw(f, root, None, 0))?;
+                assert_that!(terminal.backend().buffer()[(79, row)].symbol(), eq("█"));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn chart_and_tree_share_size_colors_even_for_focused_and_marked_targets() -> Result<()> {
         let mut ui = Browser::default();
         let root = Path::new(".");
@@ -472,7 +493,7 @@ mod tests {
             scan: scan(tmp.path())?,
             ..Default::default()
         };
-        let mut terminal = Terminal::new(TestBackend::new(84, 24))?;
+        let mut terminal = Terminal::new(TestBackend::new(85, 24))?;
         terminal.draw(|frame| ui.draw(frame, tmp.path(), None, 0))?;
         let large = ui.tiles[0].area();
         let small = ui.tiles[1].area();
