@@ -3,7 +3,7 @@ use targetscan::{Confirmation, scan};
 use test_that::prelude::*;
 
 #[test]
-fn discovers_cargo_outputs_and_prunes_their_contents() -> std::io::Result<()> {
+fn discovers_cargo_outputs_and_prunes_their_contents() -> Result<(), Box<dyn std::error::Error>> {
     let temp = tempfile::tempdir()?;
     let root = temp.path().canonicalize()?;
     fs::create_dir_all(root.join("app/target/embedded/target"))?;
