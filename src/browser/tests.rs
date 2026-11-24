@@ -206,3 +206,41 @@ fn default_view_draws_sized_clickable_blocks() -> Result<()> {
     assert_that!(large, eq(small * 3));
     Ok(())
 }
+
+#[test]
+fn visible_footer_labels_dispatch_their_shortcuts() -> Result<()> {
+    use crossterm::event::KeyCode;
+    use tuirealm::ratatui::layout::Position;
+    let mut ui = Browser::default();
+    let path = PathBuf::from("target");
+    ui.scan.targets.push(path.clone());
+    ui.scan.bytes.insert(path, 1);
+    let mut terminal = Terminal::new(TestBackend::new(80, 16))?;
+    for review in [false, true] {
+        if review {
+            ui.request();
+        }
+        terminal.draw(|f| ui.draw(f, Path::new("."), None, 0))?;
+        let buf = terminal.backend().buffer();
+        let row: String = (0..80).map(|x| buf[(x, 15)].symbol()).collect();
+        let labels = if review {
+            vec![("confirm", KeyCode::Char('y')), ("cancel", KeyCode::Esc)]
+        } else {
+            vec![
+                ("mark", KeyCode::Char(' ')),
+                ("tree/map", KeyCode::Char('t')),
+                ("delete", KeyCode::Char('d')),
+                ("quit", KeyCode::Char('q')),
+            ]
+        };
+        for (label, key) in labels {
+            let start = row
+                .find(label)
+                .ok_or_else(|| color_eyre::eyre::eyre!("missing {label} in {row}"))?;
+            let col = row[..start].chars().count() as u16;
+            assert_that!(ui.footer_key(Position::new(col, 15)), eq(Some(key)));
+        }
+        assert_that!(ui.footer_key(Position::new(79, 15)), eq(None));
+    }
+    Ok(())
+}

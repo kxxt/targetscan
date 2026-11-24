@@ -31,6 +31,15 @@ struct Browser {
 }
 
 impl Browser {
+    fn footer_key(
+        &self,
+        position: tuirealm::ratatui::layout::Position,
+    ) -> Option<crossterm::event::KeyCode> {
+        self.button
+            .contains(position)
+            .then_some(crossterm::event::KeyCode::Char('d'))
+    }
+
     fn toggle_view(&mut self) {
         let focused = self.scan.targets.get(self.cursor).cloned();
         self.tree_view = !self.tree_view;
