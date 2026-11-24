@@ -218,21 +218,23 @@ fn visible_footer_labels_dispatch_their_shortcuts() -> Result<()> {
     let mut ui = Browser::default();
     let path = PathBuf::from("target");
     ui.scan.targets.push(path.clone());
+    ui.selected.insert(path.clone());
     ui.scan.bytes.insert(path, 1);
-    let mut terminal = Terminal::new(TestBackend::new(80, 16))?;
+    let mut terminal = Terminal::new(TestBackend::new(100, 16))?;
     for review in [false, true] {
         if review {
             ui.request();
         }
         terminal.draw(|f| ui.draw(f, Path::new("."), None, 0))?;
         let buf = terminal.backend().buffer();
-        let row: String = (0..80).map(|x| buf[(x, 15)].symbol()).collect();
+        let row: String = (0..100).map(|x| buf[(x, 15)].symbol()).collect();
         let labels = if review {
             vec![("confirm", KeyCode::Char('y')), ("cancel", KeyCode::Esc)]
         } else {
             vec![
                 ("mark", KeyCode::Char(' ')),
                 ("select all", KeyCode::Char('a')),
+                ("clear marks", KeyCode::Esc),
                 ("tree/map", KeyCode::Char('t')),
                 ("delete", KeyCode::Char('d')),
                 ("quit", KeyCode::Char('q')),
@@ -245,7 +247,7 @@ fn visible_footer_labels_dispatch_their_shortcuts() -> Result<()> {
             let col = row[..start].chars().count() as u16;
             assert_that!(ui.footer_key(Position::new(col, 15)), eq(Some(key)));
         }
-        assert_that!(ui.footer_key(Position::new(79, 15)), eq(None));
+        assert_that!(ui.footer_key(Position::new(99, 15)), eq(None));
     }
     Ok(())
 }
