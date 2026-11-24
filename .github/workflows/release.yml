@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: check
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary: targetscan
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            binary: targetscan
+          - runner: windows-2022
+            target: x86_64-pc-windows-msvc
+            binary: targetscan.exe
+    runs-on: ${{ matrix.runner }}
+    env:
+      TARGET: ${{ matrix.target }}
+      BINARY: ${{ matrix.binary }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: rustup target add --toolchain stable "$TARGET"
+      - run: cargo +stable build --release --locked --target "$TARGET"
+      - name: Verify version and package executable
+        run: |
+          cd "target/$TARGET/release"
+          version=$(./"$BINARY" --version)
+          [[ "v${version#targetscan }" == "$GITHUB_REF_NAME" ]]
+          tar -czf "../../../targetscan-$TARGET.tar.gz" "$BINARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: targetscan-${{ matrix.target }}
+          path: targetscan-${{ matrix.target }}.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: targetscan-*
+          path: assets
+          merge-multiple: true
+      - name: Publish binaries, checksums and changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          awk -v heading="## ${GITHUB_REF_NAME#v}" '
+            /^## / { if (found) exit; found = ($0 == heading); next }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          grep -q '[^[:space:]]' notes.md
+          (cd assets && sha256sum *.tar.gz > SHA256SUMS)
+          flags=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" \
+            --notes-file notes.md "${flags[@]}" assets/*
