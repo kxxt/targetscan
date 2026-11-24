@@ -241,7 +241,7 @@ impl Browser {
                     paths.len(),
                     if paths.len() == 1 { "y" } else { "ies" }
                 ),
-                "Y confirm   Esc / N cancel   ↑↓ review",
+                "Y confirm   Esc / N cancel   Arrows / wheel review",
             )
         } else if let Some(task) = busy {
             let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -262,7 +262,7 @@ impl Browser {
                 } else {
                     self.status.clone()
                 },
-                "↑↓ move   Space mark   T tree/map   D delete   Q quit",
+                "Arrows / wheel move   Space mark   T tree/map   D delete   Q quit",
             )
         };
         f.render_widget(Paragraph::new(label).yellow(), status);
@@ -330,6 +330,8 @@ fn main() -> Result<()> {
     let mut job = Some(work(root.clone(), vec![]));
     let mut task = "Scanning directories";
     let start = Instant::now();
+    let mut glide: Option<(usize, Instant)> = None;
+    let frame_time = Duration::from_millis(32);
     loop {
         if job.as_ref().is_some_and(|j| j.is_finished())
             && let Some(done) = job.take()
@@ -340,6 +342,16 @@ fn main() -> Result<()> {
             ui.selected.clear();
             ui.cursor = 0;
         }
+        if let Some((destination, next_frame)) = glide
+            && Instant::now() >= next_frame
+        {
+            if ui.cursor < destination {
+                ui.cursor += 1;
+            } else if ui.cursor > destination {
+                ui.cursor -= 1;
+            }
+            glide = (ui.cursor != destination).then(|| (destination, Instant::now() + frame_time));
+        }
         terminal.draw(|f| {
             ui.draw(
                 f,
@@ -348,7 +360,10 @@ fn main() -> Result<()> {
                 (start.elapsed().as_millis() / 80) as usize,
             )
         })?;
-        if !event::poll(Duration::from_millis(80))? {
+        let timeout = glide.map_or(Duration::from_millis(80), |(_, next_frame)| {
+            next_frame.saturating_duration_since(Instant::now())
+        });
+        if !event::poll(timeout)? {
             continue;
         }
         let key = match event::read()? {
@@ -360,6 +375,37 @@ fn main() -> Result<()> {
                 }
             }
             Event::Mouse(m)
+                if job.is_none()
+                    && matches!(
+                        m.kind,
+                        MouseEventKind::ScrollUp
+                            | MouseEventKind::ScrollDown
+                            | MouseEventKind::ScrollLeft
+                            | MouseEventKind::ScrollRight
+                    ) =>
+            {
+                let forward = matches!(
+                    m.kind,
+                    MouseEventKind::ScrollDown | MouseEventKind::ScrollRight
+                );
+                let last = ui
+                    .dialog
+                    .pending()
+                    .unwrap_or(&ui.scan.targets)
+                    .len()
+                    .saturating_sub(1);
+                let (base, next_frame) = glide
+                    .filter(|(dest, _)| (*dest > ui.cursor) == forward)
+                    .unwrap_or((ui.cursor, Instant::now()));
+                let destination = if forward {
+                    base.saturating_add(3).min(last)
+                } else {
+                    base.saturating_sub(3)
+                };
+                glide = (destination != ui.cursor).then_some((destination, next_frame));
+                continue;
+            }
+            Event::Mouse(m)
                 if m.kind == MouseEventKind::Down(MouseButton::Left)
                     && ui.button.contains(Position::new(m.column, m.row)) =>
             {
@@ -368,6 +414,7 @@ fn main() -> Result<()> {
             Event::Mouse(m)
                 if job.is_none() && m.kind == MouseEventKind::Down(MouseButton::Left) =>
             {
+                glide = None;
                 if let Some(i) = ui
                     .tiles
                     .iter()
@@ -379,6 +426,8 @@ fn main() -> Result<()> {
             }
             _ => continue,
         };
+        // Stop on the displayed target before accepting a selection or deletion command.
+        glide = None;
         if job.is_some() {
             if key == KeyCode::Char('q') && task == "Scanning directories" {
                 break;
@@ -388,8 +437,10 @@ fn main() -> Result<()> {
         let pending = ui.dialog.pending();
         let count = pending.unwrap_or(&ui.scan.targets).len();
         match key {
-            KeyCode::Up => ui.cursor = ui.cursor.saturating_sub(1),
-            KeyCode::Down => ui.cursor = (ui.cursor + 1).min(count.saturating_sub(1)),
+            KeyCode::Up | KeyCode::Left => ui.cursor = ui.cursor.saturating_sub(1),
+            KeyCode::Down | KeyCode::Right => {
+                ui.cursor = (ui.cursor + 1).min(count.saturating_sub(1))
+            }
             KeyCode::Esc | KeyCode::Char('n') if pending.is_some() => {
                 ui.dialog.resolve(false);
             }
