@@ -75,6 +75,7 @@ struct Browser {
     cursor: usize,
     selected: BTreeSet<PathBuf>,
     dialog: Confirmation,
+    browse_cursor: usize,
     status: String,
     list: ListState,
     button: Rect,
@@ -85,10 +86,16 @@ struct Browser {
 
 impl Browser {
     fn refresh(&mut self, scan: Scan, status: String) {
+        let nearest = self.cursor.min(scan.targets.len().saturating_sub(1));
+        self.cursor = self
+            .scan
+            .targets
+            .get(self.cursor)
+            .and_then(|path| scan.targets.binary_search(path).ok())
+            .unwrap_or(nearest);
+        self.selected.retain(|path| scan.bytes.contains_key(path));
         self.scan = scan;
         self.status = status;
-        self.selected.clear();
-        self.cursor = 0;
     }
 
     fn request(&mut self) {
@@ -103,6 +110,7 @@ impl Browser {
             self.selected.iter().cloned().collect()
         };
         if !paths.is_empty() {
+            self.browse_cursor = self.cursor;
             self.dialog.request(paths);
             self.cursor = 0;
         }
@@ -285,7 +293,14 @@ impl Browser {
             )
         } else if let Some(task) = busy {
             let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-            (format!("{} {task}", spinner[tick % spinner.len()]), "")
+            (
+                format!("{} {task}", spinner[tick % spinner.len()]),
+                if paths.is_empty() {
+                    "Q quit"
+                } else {
+                    "Arrows / wheel move   Space mark   T tree/map   Q quit"
+                },
+            )
         } else {
             (
                 if !self.tree_view
@@ -310,7 +325,7 @@ impl Browser {
             width: actions.width.min(12),
             ..actions
         };
-        if busy.is_none() && pending.is_none() && !paths.is_empty() {
+        if pending.is_none() && !paths.is_empty() {
             let [_, legend] =
                 Layout::horizontal([Constraint::Length(13), Constraint::Min(0)]).areas(actions);
             let mut scale = vec![Span::raw(format!("{} ", format_size(smallest)))];
@@ -328,10 +343,12 @@ impl Browser {
                 scale.push(Span::raw(last));
             }
             f.render_widget(Line::from(scale), legend);
-            f.render_widget(
-                Paragraph::new(" [D] Delete ").black().on_light_red(),
-                self.button,
-            );
+            if busy.is_none() {
+                f.render_widget(
+                    Paragraph::new(" [D] Delete ").black().on_light_red(),
+                    self.button,
+                );
+            }
         }
         f.render_widget(Paragraph::new(hint), keys);
     }
@@ -391,6 +408,7 @@ fn main() -> Result<()> {
                 .join()
                 .map_err(|_| eyre!("Filesystem worker stopped unexpectedly"))??;
             ui.refresh(scan, status);
+            glide = None;
         }
         if let Some((destination, next_frame)) = glide
             && Instant::now() >= next_frame
@@ -425,14 +443,13 @@ fn main() -> Result<()> {
                 }
             }
             Event::Mouse(m)
-                if job.is_none()
-                    && matches!(
-                        m.kind,
-                        MouseEventKind::ScrollUp
-                            | MouseEventKind::ScrollDown
-                            | MouseEventKind::ScrollLeft
-                            | MouseEventKind::ScrollRight
-                    ) =>
+                if matches!(
+                    m.kind,
+                    MouseEventKind::ScrollUp
+                        | MouseEventKind::ScrollDown
+                        | MouseEventKind::ScrollLeft
+                        | MouseEventKind::ScrollRight
+                ) =>
             {
                 let forward = matches!(
                     m.kind,
@@ -461,9 +478,7 @@ fn main() -> Result<()> {
             {
                 KeyCode::Char('d')
             }
-            Event::Mouse(m)
-                if job.is_none() && m.kind == MouseEventKind::Down(MouseButton::Left) =>
-            {
+            Event::Mouse(m) if m.kind == MouseEventKind::Down(MouseButton::Left) => {
                 glide = None;
                 if let Some(i) = ui
                     .tiles
@@ -478,12 +493,6 @@ fn main() -> Result<()> {
         };
         // Stop on the displayed target before accepting a selection or deletion command.
         glide = None;
-        if job.is_some() {
-            if key == KeyCode::Char('q') && task == "Scanning directories" {
-                break;
-            }
-            continue;
-        }
         let pending = ui.dialog.pending();
         let count = pending.unwrap_or(&ui.scan.targets).len();
         match key {
@@ -493,15 +502,28 @@ fn main() -> Result<()> {
             }
             KeyCode::Esc | KeyCode::Char('n') if pending.is_some() => {
                 ui.dialog.resolve(false);
+                ui.cursor = ui.browse_cursor;
             }
             KeyCode::Char('y') if pending.is_some() => {
                 task = "Deleting confirmed outputs";
-                job = Some(work(root.clone(), ui.dialog.resolve(true)));
+                let paths = ui.dialog.resolve(true);
+                let removing: BTreeSet<_> = paths.iter().collect();
+                let next_cursor = ui.scan.targets[..ui.browse_cursor]
+                    .iter()
+                    .filter(|p| !removing.contains(*p))
+                    .count();
+                ui.scan.targets.retain(|path| !removing.contains(path));
+                for path in &paths {
+                    ui.selected.remove(path);
+                    ui.scan.bytes.remove(path);
+                }
+                ui.cursor = next_cursor.min(ui.scan.targets.len().saturating_sub(1));
+                job = Some(work(root.clone(), paths));
             }
             _ if pending.is_some() => {}
             KeyCode::Char('t') => ui.tree_view = !ui.tree_view,
             KeyCode::Char('q') => break,
-            KeyCode::Char('d') | KeyCode::Delete => ui.request(),
+            KeyCode::Char('d') | KeyCode::Delete if job.is_none() => ui.request(),
             KeyCode::Char(' ') => {
                 if let Some(path) = ui.scan.targets.get(ui.cursor)
                     && !ui.selected.remove(path)
@@ -511,6 +533,17 @@ fn main() -> Result<()> {
             }
             _ => {}
         }
+    }
+    drop(terminal);
+    // Leaving the TUI must not interrupt a confirmed recursive deletion mid-directory.
+    if task == "Deleting confirmed outputs"
+        && let Some(active) = job
+    {
+        eprintln!("Finishing confirmed deletion…");
+        let (_, status) = active
+            .join()
+            .map_err(|_| eyre!("Filesystem worker stopped unexpectedly"))??;
+        eprintln!("{status}");
     }
     Ok(())
 }
