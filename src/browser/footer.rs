@@ -26,6 +26,9 @@ impl Browser {
             if browsing {
                 actions.push(Shortcut("Space mark", "mark", Char(' ')));
                 actions.push(Shortcut("A select all", "all", Char('a')));
+                if !self.selected.is_empty() {
+                    actions.push(Shortcut("Esc clear marks", "Esc clear", Esc));
+                }
             }
         }
         if browsing {

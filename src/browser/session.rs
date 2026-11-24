@@ -141,6 +141,7 @@ pub(crate) fn run(root: PathBuf) -> Result<()> {
                 job = Some(work(root.clone(), paths));
             }
             _ if pending.is_some() => {}
+            KeyCode::Esc => ui.selected.clear(),
             KeyCode::Char('t') => ui.toggle_view(),
             KeyCode::Char('a' | 'A') => ui.selected.extend(ui.scan.targets.iter().cloned()),
             KeyCode::Char('q') => break,
