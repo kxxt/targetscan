@@ -2,6 +2,7 @@ use snafu::{ResultExt, Snafu};
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 
+#[derive(Default)]
 pub struct Scan {
     pub targets: Vec<PathBuf>,
     pub skipped: usize,
