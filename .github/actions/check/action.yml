@@ -1,0 +1,17 @@
+name: Rust checks
+description: Check formatting, lint the workspace and run tests
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchains
+      shell: bash
+      run: |
+        rustup toolchain install stable --profile minimal --component clippy
+        rustup default stable
+        rustup toolchain install nightly --profile minimal --component rustfmt
+    - shell: bash
+      run: cargo +nightly fmt --all --check
+    - shell: bash
+      run: cargo clippy --workspace --locked -- -D warnings
+    - shell: bash
+      run: cargo test --workspace --locked
