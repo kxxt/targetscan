@@ -341,6 +341,34 @@ mod tests {
     use tuirealm::ratatui::{Terminal, backend::TestBackend};
 
     #[test]
+    fn tiny_outputs_keep_their_names_and_large_outputs_use_readable_units() -> Result<()> {
+        let root = Path::new("workspace");
+        let mut ui = Browser::default();
+        for (name, size) in [("big/target", 1536 * 1024), ("tiny/target", 0)] {
+            let path = root.join(name);
+            ui.scan.bytes.insert(path.clone(), size);
+            ui.scan.targets.push(path);
+        }
+        let mut terminal = Terminal::new(TestBackend::new(60, 18))?;
+        terminal.draw(|frame| ui.draw(frame, root, None, 0))?;
+        let buffer = terminal.backend().buffer();
+        let tile_text = |tile: Rect| {
+            tile.rows()
+                .map(|row| {
+                    row.positions()
+                        .map(|pos| buffer[pos].symbol())
+                        .collect::<String>()
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+        assert_that!(tile_text(ui.tiles[0]).contains("1.5 MiB"), eq(true));
+        assert_that!(tile_text(ui.tiles[1]).contains("tiny/target"), eq(true));
+        assert_that!(tile_text(ui.tiles[1]).contains("0 B"), eq(true));
+        Ok(())
+    }
+
+    #[test]
     fn default_view_draws_sized_clickable_blocks() -> Result<()> {
         let tmp = tempfile::tempdir()?;
         for (name, size) in [("small", 100), ("large", 300)] {
