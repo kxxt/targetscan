@@ -21,6 +21,20 @@ use tuirealm::{
     terminal::{CrosstermTerminalAdapter, TerminalAdapter},
 };
 
+fn format_size(bytes: u64) -> String {
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut value = bytes as f64;
+    for unit in ["KiB", "MiB", "GiB", "TiB", "PiB", "EiB"] {
+        value /= 1024.0;
+        if value < 1024.0 {
+            return format!("{value:.1} {unit}");
+        }
+    }
+    unreachable!("all u64 byte counts fit in EiB")
+}
+
 #[derive(Parser)]
 #[command(
     version,
@@ -117,7 +131,7 @@ impl Browser {
                     .ok()
                     .filter(|p| !p.as_os_str().is_empty())
                     .unwrap_or(path);
-                let text = format!("{mark} {name:?}\n  {bytes} B");
+                let text = format!("{mark} {name:?}\n  {}", format_size(bytes));
                 f.render_widget(
                     Paragraph::new(text)
                         .black()
@@ -177,12 +191,12 @@ impl Browser {
                     && let Some(path) = paths.get(self.cursor)
                 {
                     format!(
-                        "{} · {}/{} {:?} ({} B)",
+                        "{} · {}/{} {:?} ({})",
                         self.status,
                         self.cursor + 1,
                         paths.len(),
                         path.strip_prefix(root).unwrap_or(path),
-                        self.scan.bytes[path]
+                        format_size(self.scan.bytes[path])
                     )
                 } else {
                     self.status.clone()
