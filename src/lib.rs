@@ -6,6 +6,7 @@ use std::{fs, io};
 pub struct Scan {
     pub targets: Vec<PathBuf>,
     pub skipped: usize,
+    pub bytes: std::collections::BTreeMap<PathBuf, u64>,
 }
 
 #[derive(Debug, Snafu)]
@@ -30,16 +31,26 @@ fn is_output(path: &Path) -> bool {
 pub fn scan(root: &Path) -> Result<Scan, Error> {
     let root = root.canonicalize().context(OpenSnafu { path: root })?;
     fs::read_dir(&root).context(OpenSnafu { path: &root })?;
-    let mut result = Scan {
-        targets: Vec::new(),
-        skipped: 0,
-    };
+    let mut result = Scan::default();
     let mut entries = walkdir::WalkDir::new(root).into_iter();
     while let Some(entry) = entries.next() {
         match entry {
             Ok(entry) if entry.file_type().is_dir() && is_output(entry.path()) => {
                 entries.skip_current_dir();
-                result.targets.push(entry.into_path());
+                let path = entry.into_path();
+                let mut bytes = 0u64;
+                for child in walkdir::WalkDir::new(&path).follow_root_links(false) {
+                    match child {
+                        Ok(file) if file.file_type().is_file() => match file.metadata() {
+                            Ok(info) => bytes = bytes.saturating_add(info.len()),
+                            Err(_) => result.skipped += 1,
+                        },
+                        Err(_) => result.skipped += 1,
+                        _ => {}
+                    }
+                }
+                result.bytes.insert(path.clone(), bytes);
+                result.targets.push(path);
             }
             Err(_) => result.skipped += 1,
             _ => {}
