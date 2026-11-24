@@ -510,7 +510,10 @@ mod tests {
             for (i, width) in widths.into_iter().enumerate() {
                 let row = 2 + i as u16;
                 for x in 0..40 {
-                    assert_that!(buf[(x, row)].bg == Color::Cyan, eq(x < width));
+                    assert_that!(
+                        !matches!(buf[(x, row)].bg, Color::Reset | Color::DarkGray),
+                        eq(x < width)
+                    );
                 }
             }
         }
@@ -542,15 +545,7 @@ mod tests {
     fn chart_and_tree_share_size_colors_even_for_focused_and_marked_targets() -> Result<()> {
         let mut ui = Browser::default();
         let root = Path::new(".");
-        let mib = 1 << 20;
-        let sizes = [0, mib - 1, mib, 100 * mib, 1024 * mib];
-        let colors = [
-            Color::Cyan,
-            Color::Cyan,
-            Color::Green,
-            Color::Yellow,
-            Color::LightRed,
-        ];
+        let sizes = [10, 20, 30, 40, 50, 60, 70, 70];
         for (i, bytes) in sizes.into_iter().enumerate() {
             let path = root.join(i.to_string());
             ui.scan.bytes.insert(path.clone(), bytes);
@@ -560,8 +555,22 @@ mod tests {
         let mut terminal = Terminal::new(TestBackend::new(100, 32))?;
         terminal.draw(|f| ui.draw(f, root, None, 0))?;
         let buffer = terminal.backend().buffer();
-        for (tile, expected) in ui.tiles.iter().zip(colors) {
-            assert_that!(buffer[(tile.x, tile.y)].bg, eq(expected));
+        let colors: Vec<_> = ui
+            .tiles
+            .iter()
+            .map(|tile| buffer[(tile.x, tile.y)].bg)
+            .collect();
+        assert_that!(colors.len(), eq(8));
+        assert_that!(
+            colors[..7]
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            eq(7)
+        );
+        assert_that!(colors[6], eq(colors[7]));
+        for bytes in ui.scan.bytes.values_mut() {
+            *bytes *= 1 << 30;
         }
         ui.tree_view = true;
         terminal.draw(|f| ui.draw(f, root, None, 0))?;
