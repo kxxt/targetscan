@@ -1,3 +1,4 @@
+mod chart;
 use clap::Parser;
 use color_eyre::eyre::{Result, WrapErr, eyre};
 use crossterm::event::{
@@ -40,6 +41,9 @@ struct Browser {
     status: String,
     list: ListState,
     button: Rect,
+    tree_view: bool,
+    tiles: Vec<Rect>,
+    page_start: usize,
 }
 
 impl Browser {
@@ -74,42 +78,87 @@ impl Browser {
         let title = if pending.is_some() {
             "Confirm permanent deletion"
         } else {
-            "Cargo target explorer"
+            if self.tree_view {
+                "Cargo target tree"
+            } else {
+                "Cargo target treemap · area by file size"
+            }
         };
         f.render_widget(Paragraph::new(title).bold().cyan(), header);
         f.render_widget(Paragraph::new(format!("{:?}", root)).dark_gray(), directory);
         let paths = pending.unwrap_or(&self.scan.targets);
-        let rows = paths.iter().enumerate().map(|(i, path)| {
-            let branch = if i + 1 == paths.len() {
-                "└─"
-            } else {
-                "├─"
-            };
-            let mark = if pending.is_some() {
-                "×"
-            } else if self.selected.contains(path) {
-                "[✓]"
-            } else {
-                "[ ]"
-            };
-            let relative = path.strip_prefix(root).unwrap_or(path);
-            let name = if relative.as_os_str().is_empty() {
-                Path::new(".")
-            } else {
-                relative
-            };
-            ListItem::new(format!("{branch} {mark} {name:?}"))
-        });
-        self.list.select((!paths.is_empty()).then_some(self.cursor));
-        f.render_stateful_widget(
-            List::new(rows).highlight_style(
-                tuirealm::ratatui::style::Style::default()
-                    .bg(Color::DarkGray)
-                    .bold(),
-            ),
-            tree,
-            &mut self.list,
-        );
+        self.tiles.clear();
+        if pending.is_none() && !self.tree_view && !paths.is_empty() && !tree.is_empty() {
+            let page_size = (usize::from(tree.width) * usize::from(tree.height)).min(8);
+            self.page_start = self.cursor / page_size * page_size;
+            let end = (self.page_start + page_size).min(paths.len());
+            let page = &paths[self.page_start..end];
+            let weights: Vec<_> = page.iter().map(|p| self.scan.bytes[p]).collect();
+            chart::tiles(tree, &weights, &mut self.tiles);
+            for (i, ((path, bytes), tile)) in page.iter().zip(weights).zip(&self.tiles).enumerate()
+            {
+                let index = self.page_start + i;
+                let colors = [Color::Magenta, Color::Blue, Color::Green, Color::Yellow];
+                let focused = index == self.cursor;
+                let bg = if focused {
+                    Color::Cyan
+                } else {
+                    colors[index % colors.len()]
+                };
+                let mark = if self.selected.contains(path) {
+                    "[✓]"
+                } else if focused {
+                    "▶"
+                } else {
+                    "·"
+                };
+                let name = path
+                    .strip_prefix(root)
+                    .ok()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or(path);
+                let text = format!("{mark} {name:?}\n  {bytes} B");
+                f.render_widget(
+                    Paragraph::new(text)
+                        .black()
+                        .bg(bg)
+                        .block(tuirealm::ratatui::widgets::Block::bordered()),
+                    *tile,
+                );
+            }
+        } else {
+            let rows = paths.iter().enumerate().map(|(i, path)| {
+                let branch = if i + 1 == paths.len() {
+                    "└─"
+                } else {
+                    "├─"
+                };
+                let mark = if pending.is_some() {
+                    "×"
+                } else if self.selected.contains(path) {
+                    "[✓]"
+                } else {
+                    "[ ]"
+                };
+                let relative = path.strip_prefix(root).unwrap_or(path);
+                let name = if relative.as_os_str().is_empty() {
+                    Path::new(".")
+                } else {
+                    relative
+                };
+                ListItem::new(format!("{branch} {mark} {name:?}"))
+            });
+            self.list.select((!paths.is_empty()).then_some(self.cursor));
+            f.render_stateful_widget(
+                List::new(rows).highlight_style(
+                    tuirealm::ratatui::style::Style::default()
+                        .bg(Color::DarkGray)
+                        .bold(),
+                ),
+                tree,
+                &mut self.list,
+            );
+        }
         let (label, hint) = if let Some(paths) = pending {
             (
                 format!(
@@ -124,8 +173,21 @@ impl Browser {
             (format!("{} {task}", spinner[tick % spinner.len()]), "")
         } else {
             (
-                self.status.clone(),
-                "↑↓ move   Space mark   D delete   Q quit",
+                if !self.tree_view
+                    && let Some(path) = paths.get(self.cursor)
+                {
+                    format!(
+                        "{} · {}/{} {:?} ({} B)",
+                        self.status,
+                        self.cursor + 1,
+                        paths.len(),
+                        path.strip_prefix(root).unwrap_or(path),
+                        self.scan.bytes[path]
+                    )
+                } else {
+                    self.status.clone()
+                },
+                "↑↓ move   Space mark   T tree/map   D delete   Q quit",
             )
         };
         f.render_widget(Paragraph::new(label).yellow(), status);
@@ -222,6 +284,18 @@ fn main() -> Result<()> {
             {
                 KeyCode::Char('d')
             }
+            Event::Mouse(m)
+                if job.is_none() && m.kind == MouseEventKind::Down(MouseButton::Left) =>
+            {
+                if let Some(i) = ui
+                    .tiles
+                    .iter()
+                    .position(|r| r.contains(Position::new(m.column, m.row)))
+                {
+                    ui.cursor = ui.page_start + i;
+                }
+                continue;
+            }
             _ => continue,
         };
         if job.is_some() {
@@ -243,6 +317,7 @@ fn main() -> Result<()> {
                 job = Some(work(root.clone(), ui.dialog.resolve(true)));
             }
             _ if pending.is_some() => {}
+            KeyCode::Char('t') => ui.tree_view = !ui.tree_view,
             KeyCode::Char('q') => break,
             KeyCode::Char('d') | KeyCode::Delete => ui.request(),
             KeyCode::Char(' ') => {
