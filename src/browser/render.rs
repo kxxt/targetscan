@@ -28,7 +28,7 @@ impl Browser {
         let pending = self.dialog.pending();
         let title = if pending.is_some() {
             "Confirm permanent deletion"
-        } else if self.tree_view {
+        } else if !self.treemap_view {
             "Cargo target tree · bar length by file size"
         } else {
             "Cargo target treemap · area by file size"
@@ -41,7 +41,7 @@ impl Browser {
         let SizeScale { smallest, largest } = scale;
         self.tiles.clear();
         if pending.is_none()
-            && !self.tree_view
+            && self.treemap_view
             && !self.scan.targets.is_empty()
             && tree.height >= chart::TILE_HEIGHT
             && tree.width >= 16
@@ -80,7 +80,7 @@ impl Browser {
         } else if let Some(task) = busy {
             let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
             format!("{} {task}", spinner[tick % spinner.len()])
-        } else if !self.tree_view
+        } else if self.treemap_view
             && let Some(path) = paths.get(self.cursor)
         {
             format!(

@@ -67,10 +67,7 @@ fn background_delete_preserves_browsing_and_marks_across_refresh() -> Result<()>
 #[test]
 fn tree_bars_keep_the_scan_scale_when_scrolled() -> Result<()> {
     let root = Path::new(".");
-    let mut ui = Browser {
-        tree_view: true,
-        ..Browser::default()
-    };
+    let mut ui = Browser::default();
     for (name, bytes) in [("max", 80), ("empty", 0), ("quarter", 20), ("half", 40)] {
         let path = root.join(name);
         ui.scan.bytes.insert(path.clone(), bytes);
@@ -103,8 +100,8 @@ fn scrollbar_reaches_the_last_row_in_both_views() -> Result<()> {
         ui.scan.bytes.insert(path.clone(), 1);
         ui.scan.targets.push(path);
     }
-    for tree in [false, true] {
-        ui.tree_view = tree;
+    for treemap in [false, true] {
+        ui.treemap_view = treemap;
         let mut terminal = Terminal::new(TestBackend::new(80, 16))?;
         for (cursor, row) in [(0, 2), (31, 12)] {
             ui.cursor = cursor;
@@ -118,7 +115,7 @@ fn scrollbar_reaches_the_last_row_in_both_views() -> Result<()> {
 #[test]
 fn chart_and_tree_share_size_colors_even_for_focused_and_marked_targets() -> Result<()> {
     let mut ui = Browser {
-        tree_view: false,
+        treemap_view: true,
         ..Browser::default()
     };
     let root = Path::new(".");
@@ -149,7 +146,7 @@ fn chart_and_tree_share_size_colors_even_for_focused_and_marked_targets() -> Res
     for bytes in ui.scan.bytes.values_mut() {
         *bytes *= 1 << 30;
     }
-    ui.tree_view = true;
+    ui.treemap_view = false;
     terminal.draw(|f| ui.draw(f, root, None, 0))?;
     let buffer = terminal.backend().buffer();
     for (i, expected) in colors.into_iter().enumerate() {
@@ -163,7 +160,7 @@ fn chart_and_tree_share_size_colors_even_for_focused_and_marked_targets() -> Res
 fn tiny_outputs_keep_their_names_and_large_outputs_use_readable_units() -> Result<()> {
     let root = Path::new("workspace");
     let mut ui = Browser {
-        tree_view: false,
+        treemap_view: true,
         ..Browser::default()
     };
     for (name, size) in [("big/target", 1536 * 1024), ("tiny/target", 0)] {
@@ -203,7 +200,7 @@ fn toggling_from_the_default_tree_draws_sized_clickable_blocks() -> Result<()> {
         scan: scan(tmp.path())?,
         ..Default::default()
     };
-    assert_that!(ui.tree_view, eq(true));
+    assert_that!(ui.treemap_view, eq(false));
     ui.toggle_view();
     let mut terminal = Terminal::new(TestBackend::new(85, 24))?;
     terminal.draw(|frame| ui.draw(frame, tmp.path(), None, 0))?;

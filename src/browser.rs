@@ -30,7 +30,7 @@ struct Browser {
     status: String,
     list: ListState,
     buttons: Vec<(Rect, KeyCode)>,
-    tree_view: bool,
+    treemap_view: bool,
     tiles: Vec<Rect>,
     page_start: usize,
 }
@@ -45,13 +45,13 @@ impl Browser {
 
     fn toggle_view(&mut self) {
         let focused = self.scan.targets.get(self.cursor).cloned();
-        self.tree_view = !self.tree_view;
+        self.treemap_view = !self.treemap_view;
         self.order_targets(focused.as_deref());
     }
 
     fn order_targets(&mut self, focused: Option<&Path>) {
         let Scan { targets, bytes, .. } = &mut self.scan;
-        if self.tree_view {
+        if !self.treemap_view {
             targets.sort_unstable_by(|a, b| bytes[b].cmp(&bytes[a]).then_with(|| a.cmp(b)));
         } else {
             targets.sort_unstable();
