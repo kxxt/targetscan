@@ -85,6 +85,10 @@ struct Browser {
 }
 
 impl Browser {
+    fn toggle_view(&mut self) {
+        self.tree_view = !self.tree_view;
+    }
+
     fn refresh(&mut self, scan: Scan, status: String) {
         let nearest = self.cursor.min(scan.targets.len().saturating_sub(1));
         self.cursor = self
@@ -521,7 +525,7 @@ fn main() -> Result<()> {
                 job = Some(work(root.clone(), paths));
             }
             _ if pending.is_some() => {}
-            KeyCode::Char('t') => ui.tree_view = !ui.tree_view,
+            KeyCode::Char('t') => ui.toggle_view(),
             KeyCode::Char('q') => break,
             KeyCode::Char('d') | KeyCode::Delete if job.is_none() => ui.request(),
             KeyCode::Char(' ') => {
@@ -554,6 +558,37 @@ mod tests {
     use std::fs;
     use test_that::prelude::*;
     use tuirealm::ratatui::{Terminal, backend::TestBackend};
+
+    #[test]
+    fn tree_orders_by_descending_bytes_then_path_and_keeps_focus() {
+        let mut ui = Browser::default();
+        let fixture = |a_size| {
+            let bytes = [
+                (PathBuf::from("a"), a_size),
+                ("b".into(), 25),
+                ("c".into(), 25),
+            ]
+            .into_iter()
+            .collect::<std::collections::BTreeMap<_, _>>();
+            Scan {
+                targets: bytes.keys().cloned().collect(),
+                bytes,
+                skipped: 0,
+            }
+        };
+        ui.refresh(fixture(0), String::new());
+        ui.toggle_view();
+        let paths = |names: [&str; 3]| names.map(PathBuf::from).to_vec();
+        assert_that!(ui.scan.targets, eq(paths(["b", "c", "a"])));
+        assert_that!(ui.cursor, eq(2));
+        ui.refresh(fixture(80), String::new());
+        assert_that!(ui.scan.targets, eq(paths(["a", "b", "c"])));
+        assert_that!(ui.cursor, eq(0));
+        ui.refresh(fixture(0), String::new());
+        ui.toggle_view();
+        assert_that!(ui.scan.targets, eq(paths(["a", "b", "c"])));
+        assert_that!(ui.cursor, eq(0));
+    }
 
     #[test]
     fn background_delete_preserves_browsing_and_marks_across_refresh() -> Result<()> {
