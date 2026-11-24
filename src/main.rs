@@ -257,3 +257,41 @@ fn main() -> Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use test_that::prelude::*;
+    use tuirealm::ratatui::{Terminal, backend::TestBackend};
+
+    #[test]
+    fn default_view_draws_sized_clickable_blocks() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        for (name, size) in [("small", 100), ("large", 300)] {
+            let dir = tmp.path().join(name);
+            fs::create_dir(&dir)?;
+            fs::write(dir.join(".rustc_info.json"), "")?;
+            fs::write(dir.join("artifact"), vec![0; size])?;
+        }
+        let mut ui = Browser {
+            scan: scan(tmp.path())?,
+            ..Default::default()
+        };
+        let mut terminal = Terminal::new(TestBackend::new(84, 24))?;
+        terminal.draw(|frame| ui.draw(frame, tmp.path(), None, 0))?;
+        let buffer = terminal.backend().buffer();
+        let cells = |color| {
+            buffer
+                .content
+                .iter()
+                .filter(|cell| cell.bg == color)
+                .count()
+        };
+        let large = cells(Color::Cyan);
+        let small = cells(Color::Blue);
+        assert_that!(small, gt(0));
+        assert_that!(large, eq(small * 3));
+        Ok(())
+    }
+}
