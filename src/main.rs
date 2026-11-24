@@ -86,19 +86,28 @@ struct Browser {
 
 impl Browser {
     fn toggle_view(&mut self) {
+        let focused = self.scan.targets.get(self.cursor).cloned();
         self.tree_view = !self.tree_view;
+        self.order_targets(focused.as_deref());
+    }
+
+    fn order_targets(&mut self, focused: Option<&Path>) {
+        let Scan { targets, bytes, .. } = &mut self.scan;
+        if self.tree_view {
+            targets.sort_unstable_by(|a, b| bytes[b].cmp(&bytes[a]).then_with(|| a.cmp(b)));
+        } else {
+            targets.sort_unstable();
+        }
+        self.cursor = focused
+            .and_then(|path| targets.iter().position(|entry| entry == path))
+            .unwrap_or_else(|| self.cursor.min(targets.len().saturating_sub(1)));
     }
 
     fn refresh(&mut self, scan: Scan, status: String) {
-        let nearest = self.cursor.min(scan.targets.len().saturating_sub(1));
-        self.cursor = self
-            .scan
-            .targets
-            .get(self.cursor)
-            .and_then(|path| scan.targets.binary_search(path).ok())
-            .unwrap_or(nearest);
+        let focused = self.scan.targets.get(self.cursor).cloned();
         self.selected.retain(|path| scan.bytes.contains_key(path));
         self.scan = scan;
+        self.order_targets(focused.as_deref());
         self.status = status;
     }
 
