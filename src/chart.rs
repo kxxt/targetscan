@@ -1,42 +1,36 @@
 use tuirealm::ratatui::layout::Rect;
 
-/// Split along the visually longer axis (terminal cells are roughly twice as tall as wide).
-/// Each half reserves enough cells to keep tiny and empty targets selectable.
-pub fn tiles(area: Rect, weights: &[u64], out: &mut Vec<Rect>) {
-    if weights.is_empty() || area.is_empty() {
-        return;
-    }
+pub const TILE_HEIGHT: u16 = 4;
+
+// The caller limits the page to the number of label-sized rectangles that fit.
+pub fn tiles(area: Rect, weights: &[u64], label_width: u16, out: &mut Vec<Rect>) {
     if weights.len() == 1 {
         out.push(area);
         return;
     }
-    let mid = weights.len() / 2;
-    let horizontal = area.width >= area.height.saturating_mul(2) || area.height == 1;
-    let horizontal = horizontal && area.width > 1;
-    let (length, cross) = if horizontal {
-        (area.width, area.height)
+    let columns = area.width / label_width;
+    let rows = area.height / TILE_HEIGHT;
+    let horizontal = rows == 1 || (columns > 1 && area.width >= area.height.saturating_mul(2));
+    let (length, cross_slots, unit) = if horizontal {
+        (area.width, rows, label_width)
     } else {
-        (area.height, area.width)
+        (area.height, columns, TILE_HEIGHT)
     };
-    let sum = |slice: &[u64]| slice.iter().map(|&n| u128::from(n.max(1))).sum::<u128>();
-    let left = sum(&weights[..mid]);
-    let total = left + sum(&weights[mid..]);
-    let min = (mid as u16).div_ceil(cross);
-    let max = length - ((weights.len() - mid) as u16).div_ceil(cross);
-    // A narrow odd-sized rectangle can fit both groups only along its other axis.
-    if min > max {
-        for i in 0..weights.len() as u16 {
-            out.push(Rect::new(
-                area.x + i % area.width,
-                area.y + i / area.width,
-                1,
-                1,
-            ));
-        }
-        return;
+    let slots = length / unit;
+    let count = weights.len() as u16;
+    let mut mid = count / 2;
+    // When both halves would need a partially filled strip, move the split to
+    // a strip boundary so neither child loses its last label slot.
+    if mid.div_ceil(cross_slots) + (count - mid).div_ceil(cross_slots) > slots {
+        mid = mid.div_ceil(cross_slots) * cross_slots;
     }
-    let cut = ((u128::from(length) * left + total / 2) / total) as u16;
-    let cut = cut.clamp(min, max);
+    let min = mid.div_ceil(cross_slots) * unit;
+    let max = length - (count - mid).div_ceil(cross_slots) * unit;
+    let (first_weights, second_weights) = weights.split_at(usize::from(mid));
+    let sum = |slice: &[u64]| slice.iter().map(|&n| u128::from(n.max(1))).sum::<u128>();
+    let left = sum(first_weights);
+    let total = left + sum(second_weights);
+    let cut = (((u128::from(length) * left + total / 2) / total) as u16).clamp(min, max);
     let mut first = area;
     let mut second = area;
     if horizontal {
@@ -48,6 +42,6 @@ pub fn tiles(area: Rect, weights: &[u64], out: &mut Vec<Rect>) {
         second.y += cut;
         second.height -= cut;
     }
-    tiles(first, &weights[..mid], out);
-    tiles(second, &weights[mid..], out);
+    tiles(first, first_weights, label_width, out);
+    tiles(second, second_weights, label_width, out);
 }
