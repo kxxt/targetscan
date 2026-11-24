@@ -16,10 +16,24 @@ use tuirealm::{
         Frame,
         layout::{Constraint, Layout, Position, Rect},
         style::{Color, Stylize},
-        widgets::{List, ListItem, ListState, Paragraph},
+        text::{Line, Span},
+        widgets::{Block, BorderType, List, ListItem, ListState, Paragraph},
     },
     terminal::{CrosstermTerminalAdapter, TerminalAdapter},
 };
+
+const MIB: u64 = 1 << 20;
+const SIZE_BANDS: [(u64, Color, &str); 4] = [
+    (0, Color::Cyan, "<1 MiB"),
+    (MIB, Color::Green, "1 MiB+"),
+    (100 * MIB, Color::Yellow, "100 MiB+"),
+    (1024 * MIB, Color::LightRed, "1 GiB+"),
+];
+
+fn size_color(bytes: u64) -> Color {
+    let band = SIZE_BANDS.partition_point(|&(minimum, _, _)| minimum <= bytes);
+    SIZE_BANDS[band - 1].1
+}
 
 fn format_size(bytes: u64) -> String {
     if bytes < 1024 {
@@ -139,12 +153,11 @@ impl Browser {
             for (i, ((path, bytes), tile)) in page.iter().zip(weights).zip(&self.tiles).enumerate()
             {
                 let index = self.page_start + i;
-                let colors = [Color::Magenta, Color::Blue, Color::Green, Color::Yellow];
                 let focused = index == self.cursor;
-                let bg = if focused {
-                    Color::Cyan
+                let border = if focused {
+                    BorderType::Double
                 } else {
-                    colors[index % colors.len()]
+                    BorderType::Plain
                 };
                 let mark = if self.selected.contains(path) {
                     "[✓]"
@@ -157,8 +170,8 @@ impl Browser {
                 f.render_widget(
                     Paragraph::new(text)
                         .black()
-                        .bg(bg)
-                        .block(tuirealm::ratatui::widgets::Block::bordered()),
+                        .bg(size_color(bytes))
+                        .block(Block::bordered().border_type(border)),
                     *tile,
                 );
             }
@@ -182,10 +195,9 @@ impl Browser {
                 } else {
                     relative
                 };
-                ListItem::new(format!(
-                    "{branch} {mark} {name:?}  {}",
-                    format_size(self.scan.bytes[path])
-                ))
+                let bytes = self.scan.bytes[path];
+                ListItem::new(format!("{branch} {mark} {name:?}  {}", format_size(bytes)))
+                    .fg(size_color(bytes))
             });
             self.list.select((!paths.is_empty()).then_some(self.cursor));
             f.render_stateful_widget(
@@ -235,6 +247,12 @@ impl Browser {
             ..actions
         };
         if busy.is_none() && pending.is_none() && !paths.is_empty() {
+            let [_, legend] =
+                Layout::horizontal([Constraint::Length(13), Constraint::Min(0)]).areas(actions);
+            let bands = SIZE_BANDS
+                .iter()
+                .map(|&(_, color, label)| Span::from(format!("■ {label}  ")).fg(color));
+            f.render_widget(Line::from_iter(bands), legend);
             f.render_widget(
                 Paragraph::new(" [D] Delete ").black().on_light_red(),
                 self.button,
