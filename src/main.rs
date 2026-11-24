@@ -84,6 +84,13 @@ struct Browser {
 }
 
 impl Browser {
+    fn refresh(&mut self, scan: Scan, status: String) {
+        self.scan = scan;
+        self.status = status;
+        self.selected.clear();
+        self.cursor = 0;
+    }
+
     fn request(&mut self) {
         let paths: Vec<PathBuf> = if self.selected.is_empty() {
             self.scan
@@ -380,11 +387,10 @@ fn main() -> Result<()> {
         if job.as_ref().is_some_and(|j| j.is_finished())
             && let Some(done) = job.take()
         {
-            (ui.scan, ui.status) = done
+            let (scan, status) = done
                 .join()
                 .map_err(|_| eyre!("Filesystem worker stopped unexpectedly"))??;
-            ui.selected.clear();
-            ui.cursor = 0;
+            ui.refresh(scan, status);
         }
         if let Some((destination, next_frame)) = glide
             && Instant::now() >= next_frame
@@ -515,6 +521,33 @@ mod tests {
     use std::fs;
     use test_that::prelude::*;
     use tuirealm::ratatui::{Terminal, backend::TestBackend};
+
+    #[test]
+    fn background_delete_preserves_browsing_and_marks_across_refresh() -> Result<()> {
+        let mut ui = Browser::default();
+        let a = PathBuf::from("a");
+        let b = PathBuf::from("b");
+        let c = PathBuf::from("c");
+        ui.scan.targets = vec![a.clone(), b.clone(), c.clone()];
+        ui.scan.bytes = [(a.clone(), 1), (b.clone(), 2), (c.clone(), 3)].into();
+        ui.cursor = 2;
+        ui.selected.insert(c.clone());
+        let mut terminal = Terminal::new(TestBackend::new(100, 24))?;
+        terminal.draw(|f| ui.draw(f, Path::new("."), Some("Deleting confirmed outputs"), 0))?;
+        let hint: String = (0..100)
+            .map(|x| terminal.backend().buffer()[(x, 23)].symbol())
+            .collect();
+        assert_that!(hint.contains("Space mark"), eq(true));
+        let refreshed = Scan {
+            targets: vec![b.clone(), c.clone()],
+            bytes: [(b, 2), (c.clone(), 3)].into(),
+            skipped: 0,
+        };
+        ui.refresh(refreshed, "Deleted".into());
+        assert_that!(ui.cursor, eq(1));
+        assert_that!(ui.selected.contains(&c), eq(true));
+        Ok(())
+    }
 
     #[test]
     fn tree_bars_keep_the_scan_scale_when_scrolled() -> Result<()> {
