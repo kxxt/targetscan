@@ -38,4 +38,5 @@
 - Prefer doing things in process to spawning an external command or even shell.
 - If an operation may take some time, add a progress bar (e.g. `indicatf` crate).
 - Use toml for configuration files.
-- For TUI, use `tui-realm`.
+- For TUI, use `tuirealm`.
+- Organize your code into modules, don't create huge code files.
