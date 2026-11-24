@@ -97,22 +97,17 @@ pub(crate) fn run(root: PathBuf) -> Result<()> {
                 glide = (destination != ui.cursor).then_some((destination, next_frame));
                 continue;
             }
-            Event::Mouse(m)
-                if m.kind == MouseEventKind::Down(MouseButton::Left)
-                    && ui.button.contains(Position::new(m.column, m.row)) =>
-            {
-                KeyCode::Char('d')
-            }
             Event::Mouse(m) if m.kind == MouseEventKind::Down(MouseButton::Left) => {
-                glide = None;
-                if let Some(i) = ui
-                    .tiles
-                    .iter()
-                    .position(|r| r.contains(Position::new(m.column, m.row)))
-                {
-                    ui.cursor = ui.page_start + i;
+                let position = Position::new(m.column, m.row);
+                if let Some(key) = ui.footer_key(position) {
+                    key
+                } else {
+                    glide = None;
+                    if let Some(i) = ui.tiles.iter().position(|r| r.contains(position)) {
+                        ui.cursor = ui.page_start + i;
+                    }
+                    continue;
                 }
-                continue;
             }
             _ => continue,
         };

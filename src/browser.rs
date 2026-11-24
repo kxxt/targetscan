@@ -1,3 +1,4 @@
+mod footer;
 mod render;
 mod session;
 mod size;
@@ -8,12 +9,16 @@ mod treemap;
 
 pub(crate) use session::run;
 
+use crossterm::event::KeyCode;
 use std::{
     collections::BTreeSet,
     path::{Path, PathBuf},
 };
 use targetscan::{Confirmation, Scan};
-use tuirealm::ratatui::{layout::Rect, widgets::ListState};
+use tuirealm::ratatui::{
+    layout::{Position, Rect},
+    widgets::ListState,
+};
 
 #[derive(Default)]
 struct Browser {
@@ -24,20 +29,18 @@ struct Browser {
     browse_cursor: usize,
     status: String,
     list: ListState,
-    button: Rect,
+    buttons: Vec<(Rect, KeyCode)>,
     tree_view: bool,
     tiles: Vec<Rect>,
     page_start: usize,
 }
 
 impl Browser {
-    fn footer_key(
-        &self,
-        position: tuirealm::ratatui::layout::Position,
-    ) -> Option<crossterm::event::KeyCode> {
-        self.button
-            .contains(position)
-            .then_some(crossterm::event::KeyCode::Char('d'))
+    fn footer_key(&self, position: Position) -> Option<KeyCode> {
+        self.buttons
+            .iter()
+            .find(|(rect, _)| rect.contains(position))
+            .map(|(_, key)| *key)
     }
 
     fn toggle_view(&mut self) {

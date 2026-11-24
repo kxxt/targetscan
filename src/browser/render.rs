@@ -13,13 +13,16 @@ use tuirealm::ratatui::{
 };
 impl Browser {
     pub(super) fn draw(&mut self, f: &mut Frame, root: &Path, busy: Option<&str>, tick: usize) {
+        self.buttons.clear();
+        let shortcuts = self.footer_layout(f.area().width, busy.is_some());
+        let footer_height = shortcuts.last().map_or(1, |(rect, _, _)| rect.bottom());
         let [header, directory, tree, status, actions, keys] = Layout::vertical([
             Constraint::Length(1),
             Constraint::Length(1),
             Constraint::Min(1),
             Constraint::Length(1),
             Constraint::Length(1),
-            Constraint::Length(1),
+            Constraint::Length(footer_height),
         ])
         .areas(f.area());
         let pending = self.dialog.pending();
@@ -68,51 +71,32 @@ impl Browser {
                 .position(offset);
             f.render_stateful_widget(bar, rail, &mut state);
         }
-        let (label, hint) = if let Some(paths) = pending {
-            (
-                format!(
-                    "Permanently remove {} director{} and all contents?",
-                    paths.len(),
-                    if paths.len() == 1 { "y" } else { "ies" }
-                ),
-                "Y confirm   Esc / N cancel   Arrows / wheel review",
+        let label = if let Some(paths) = pending {
+            format!(
+                "Permanently remove {} director{} and all contents?",
+                paths.len(),
+                if paths.len() == 1 { "y" } else { "ies" }
             )
         } else if let Some(task) = busy {
             let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-            (
-                format!("{} {task}", spinner[tick % spinner.len()]),
-                if paths.is_empty() {
-                    "Q quit"
-                } else {
-                    "Arrows / wheel move   Space mark   T tree/map   Q quit"
-                },
+            format!("{} {task}", spinner[tick % spinner.len()])
+        } else if !self.tree_view
+            && let Some(path) = paths.get(self.cursor)
+        {
+            format!(
+                "{} · {}/{} {:?} ({})",
+                self.status,
+                self.cursor + 1,
+                paths.len(),
+                path.strip_prefix(root).unwrap_or(path),
+                format_size(self.scan.bytes[path])
             )
         } else {
-            (
-                if !self.tree_view
-                    && let Some(path) = paths.get(self.cursor)
-                {
-                    format!(
-                        "{} · {}/{} {:?} ({})",
-                        self.status,
-                        self.cursor + 1,
-                        paths.len(),
-                        path.strip_prefix(root).unwrap_or(path),
-                        format_size(self.scan.bytes[path])
-                    )
-                } else {
-                    self.status.clone()
-                },
-                "Arrows / wheel move   Space mark   T tree/map   D delete   Q quit",
-            )
+            self.status.clone()
         };
         f.render_widget(Paragraph::new(label).yellow(), status);
-        self.button = Rect {
-            width: actions.width.min(12),
-            ..actions
-        };
         if pending.is_none() && !paths.is_empty() {
-            let [_, legend] =
+            let [button, legend] =
                 Layout::horizontal([Constraint::Length(13), Constraint::Min(0)]).areas(actions);
             let mut scale = vec![Span::raw(format!("{} ", format_size(smallest)))];
             if smallest == largest {
@@ -130,12 +114,18 @@ impl Browser {
             }
             f.render_widget(Line::from(scale), legend);
             if busy.is_none() {
+                let button = Rect {
+                    width: button.width.min(12),
+                    ..button
+                };
                 f.render_widget(
                     Paragraph::new(" [D] Delete ").black().on_light_red(),
-                    self.button,
+                    button,
                 );
+                self.buttons
+                    .push((button, crossterm::event::KeyCode::Char('d')));
             }
         }
-        f.render_widget(Paragraph::new(hint), keys);
+        self.draw_shortcuts(f, keys, shortcuts);
     }
 }
