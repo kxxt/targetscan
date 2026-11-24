@@ -17,7 +17,10 @@ use tuirealm::{
         layout::{Constraint, Layout, Position, Rect},
         style::{Color, Stylize},
         text::{Line, Span},
-        widgets::{Block, BorderType, List, ListItem, ListState, Paragraph},
+        widgets::{
+            Block, BorderType, List, ListItem, ListState, Paragraph, Scrollbar,
+            ScrollbarOrientation, ScrollbarState,
+        },
     },
     terminal::{CrosstermTerminalAdapter, TerminalAdapter},
 };
@@ -115,6 +118,8 @@ impl Browser {
         f.render_widget(Paragraph::new(title).bold().cyan(), header);
         f.render_widget(Paragraph::new(format!("{:?}", root)).dark_gray(), directory);
         let paths = pending.unwrap_or(&self.scan.targets);
+        let [tree, rail] =
+            Layout::horizontal([Constraint::Min(0), Constraint::Length(1)]).areas(tree);
         self.tiles.clear();
         if pending.is_none()
             && !self.tree_view
@@ -209,6 +214,25 @@ impl Browser {
                 tree,
                 &mut self.list,
             );
+        }
+        if !paths.is_empty() {
+            let (offset, visible) = if self.tiles.is_empty() {
+                (
+                    self.list.offset(),
+                    usize::from(tree.height).min(paths.len()),
+                )
+            } else {
+                (self.page_start, self.tiles.len())
+            };
+            let bar = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(None)
+                .end_symbol(None)
+                .thumb_symbol("█")
+                .track_symbol(Some("│"));
+            let mut state = ScrollbarState::new(paths.len() - visible + 1)
+                .viewport_content_length(visible)
+                .position(offset);
+            f.render_stateful_widget(bar, rail, &mut state);
         }
         let (label, hint) = if let Some(paths) = pending {
             (
