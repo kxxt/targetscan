@@ -25,17 +25,16 @@ fn tree_orders_by_descending_bytes_then_path_and_keeps_focus() {
         }
     };
     ui.refresh(fixture(0), String::new());
-    ui.toggle_view();
     let paths = |names: [&str; 3]| names.map(PathBuf::from).to_vec();
     assert_that!(ui.scan.targets, eq(paths(["b", "c", "a"])));
-    assert_that!(ui.cursor, eq(2));
+    assert_that!(ui.cursor, eq(0));
     ui.refresh(fixture(80), String::new());
     assert_that!(ui.scan.targets, eq(paths(["a", "b", "c"])));
-    assert_that!(ui.cursor, eq(0));
+    assert_that!(ui.cursor, eq(1));
     ui.refresh(fixture(0), String::new());
     ui.toggle_view();
     assert_that!(ui.scan.targets, eq(paths(["a", "b", "c"])));
-    assert_that!(ui.cursor, eq(0));
+    assert_that!(ui.cursor, eq(1));
 }
 
 #[test]
@@ -60,7 +59,7 @@ fn background_delete_preserves_browsing_and_marks_across_refresh() -> Result<()>
         skipped: 0,
     };
     ui.refresh(refreshed, "Deleted".into());
-    assert_that!(ui.cursor, eq(1));
+    assert_that!(ui.scan.targets[ui.cursor], eq(c.clone()));
     assert_that!(ui.selected.contains(&c), eq(true));
     Ok(())
 }
@@ -118,7 +117,10 @@ fn scrollbar_reaches_the_last_row_in_both_views() -> Result<()> {
 
 #[test]
 fn chart_and_tree_share_size_colors_even_for_focused_and_marked_targets() -> Result<()> {
-    let mut ui = Browser::default();
+    let mut ui = Browser {
+        tree_view: false,
+        ..Browser::default()
+    };
     let root = Path::new(".");
     let sizes = [10, 20, 30, 40, 50, 60, 70, 70];
     for (i, bytes) in sizes.into_iter().enumerate() {
@@ -160,7 +162,10 @@ fn chart_and_tree_share_size_colors_even_for_focused_and_marked_targets() -> Res
 #[test]
 fn tiny_outputs_keep_their_names_and_large_outputs_use_readable_units() -> Result<()> {
     let root = Path::new("workspace");
-    let mut ui = Browser::default();
+    let mut ui = Browser {
+        tree_view: false,
+        ..Browser::default()
+    };
     for (name, size) in [("big/target", 1536 * 1024), ("tiny/target", 0)] {
         let path = root.join(name);
         ui.scan.bytes.insert(path.clone(), size);
@@ -186,7 +191,7 @@ fn tiny_outputs_keep_their_names_and_large_outputs_use_readable_units() -> Resul
 }
 
 #[test]
-fn default_view_draws_sized_clickable_blocks() -> Result<()> {
+fn toggling_from_the_default_tree_draws_sized_clickable_blocks() -> Result<()> {
     let tmp = tempfile::tempdir()?;
     for (name, size) in [("small", 100), ("large", 300)] {
         let dir = tmp.path().join(name);
@@ -198,6 +203,8 @@ fn default_view_draws_sized_clickable_blocks() -> Result<()> {
         scan: scan(tmp.path())?,
         ..Default::default()
     };
+    assert_that!(ui.tree_view, eq(true));
+    ui.toggle_view();
     let mut terminal = Terminal::new(TestBackend::new(85, 24))?;
     terminal.draw(|frame| ui.draw(frame, tmp.path(), None, 0))?;
     let large = ui.tiles[0].area();
