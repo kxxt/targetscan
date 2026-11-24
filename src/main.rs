@@ -25,17 +25,23 @@ use tuirealm::{
     terminal::{CrosstermTerminalAdapter, TerminalAdapter},
 };
 
-const MIB: u64 = 1 << 20;
-const SIZE_BANDS: [(u64, Color, &str); 4] = [
-    (0, Color::Cyan, "<1 MiB"),
-    (MIB, Color::Green, "1 MiB+"),
-    (100 * MIB, Color::Yellow, "100 MiB+"),
-    (1024 * MIB, Color::LightRed, "1 GiB+"),
-];
-
-fn size_color(bytes: u64) -> Color {
-    let band = SIZE_BANDS.partition_point(|&(minimum, _, _)| minimum <= bytes);
-    SIZE_BANDS[band - 1].1
+fn gradient(position: f64) -> Color {
+    let stops = [
+        [110, 150, 249],
+        [76, 207, 204],
+        [170, 224, 120],
+        [255, 203, 91],
+        [255, 118, 101],
+    ];
+    let scaled = position * (stops.len() - 1) as f64;
+    let index = (scaled as usize).min(stops.len() - 2);
+    let fraction = scaled - index as f64;
+    let [red, green, blue] = std::array::from_fn(|i| {
+        let from = f64::from(stops[index][i]);
+        let to = f64::from(stops[index + 1][i]);
+        (from + fraction * (to - from)).round() as u8
+    });
+    Color::Rgb(red, green, blue)
 }
 
 fn format_size(bytes: u64) -> String {
@@ -120,6 +126,18 @@ impl Browser {
         let paths = pending.unwrap_or(&self.scan.targets);
         let [tree, rail] =
             Layout::horizontal([Constraint::Min(0), Constraint::Length(1)]).areas(tree);
+        let (smallest, largest) = self
+            .scan
+            .bytes
+            .values()
+            .fold((u64::MAX, 0), |(lo, hi), &n| (lo.min(n), hi.max(n)));
+        let size_color = |bytes: u64| {
+            if smallest == largest {
+                return gradient(0.5);
+            }
+            // Expand the lower end so small builds remain distinguishable beside a large outlier.
+            gradient(((bytes - smallest) as f64 / (largest - smallest) as f64).sqrt())
+        };
         self.tiles.clear();
         if pending.is_none()
             && !self.tree_view
@@ -216,10 +234,7 @@ impl Browser {
                 tree,
                 &mut self.list,
             );
-            if pending.is_none()
-                && let Some(&largest) = self.scan.bytes.values().max()
-                && largest > 0
-            {
+            if pending.is_none() && largest > 0 {
                 // List rendering updates its offset to keep the focused entry visible.
                 let visible = paths.iter().skip(self.list.offset()).zip(tree.rows());
                 for (path, row) in visible {
@@ -291,10 +306,21 @@ impl Browser {
         if busy.is_none() && pending.is_none() && !paths.is_empty() {
             let [_, legend] =
                 Layout::horizontal([Constraint::Length(13), Constraint::Min(0)]).areas(actions);
-            let bands = SIZE_BANDS
-                .iter()
-                .map(|&(_, color, label)| Span::from(format!("■ {label}  ")).fg(color));
-            f.render_widget(Line::from_iter(bands), legend);
+            let mut scale = vec![Span::raw(format!("{} ", format_size(smallest)))];
+            if smallest == largest {
+                scale.push(Span::styled("■", size_color(smallest)));
+            } else {
+                let last = format!(" {}", format_size(largest));
+                let labels = scale[0].width() + last.len();
+                let steps = usize::from(legend.width)
+                    .saturating_sub(labels)
+                    .clamp(2, 24);
+                scale.extend(
+                    (0..steps).map(|i| Span::styled("█", gradient(i as f64 / (steps - 1) as f64))),
+                );
+                scale.push(Span::raw(last));
+            }
+            f.render_widget(Line::from(scale), legend);
             f.render_widget(
                 Paragraph::new(" [D] Delete ").black().on_light_red(),
                 self.button,
