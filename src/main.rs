@@ -380,6 +380,40 @@ mod tests {
     use tuirealm::ratatui::{Terminal, backend::TestBackend};
 
     #[test]
+    fn chart_and_tree_share_size_colors_even_for_focused_and_marked_targets() -> Result<()> {
+        let mut ui = Browser::default();
+        let root = Path::new(".");
+        let mib = 1 << 20;
+        let sizes = [0, mib - 1, mib, 100 * mib, 1024 * mib];
+        let colors = [
+            Color::Cyan,
+            Color::Cyan,
+            Color::Green,
+            Color::Yellow,
+            Color::LightRed,
+        ];
+        for (i, bytes) in sizes.into_iter().enumerate() {
+            let path = root.join(i.to_string());
+            ui.scan.bytes.insert(path.clone(), bytes);
+            ui.scan.targets.push(path);
+        }
+        ui.selected.insert(ui.scan.targets[0].clone());
+        let mut terminal = Terminal::new(TestBackend::new(100, 32))?;
+        terminal.draw(|f| ui.draw(f, root, None, 0))?;
+        let buffer = terminal.backend().buffer();
+        for (tile, expected) in ui.tiles.iter().zip(colors) {
+            assert_that!(buffer[(tile.x, tile.y)].bg, eq(expected));
+        }
+        ui.tree_view = true;
+        terminal.draw(|f| ui.draw(f, root, None, 0))?;
+        let buffer = terminal.backend().buffer();
+        for (i, expected) in colors.into_iter().enumerate() {
+            assert_that!(buffer[(0, 2 + i as u16)].fg, eq(expected));
+        }
+        Ok(())
+    }
+
+    #[test]
     fn tiny_outputs_keep_their_names_and_large_outputs_use_readable_units() -> Result<()> {
         let root = Path::new("workspace");
         let mut ui = Browser::default();
@@ -422,16 +456,8 @@ mod tests {
         };
         let mut terminal = Terminal::new(TestBackend::new(84, 24))?;
         terminal.draw(|frame| ui.draw(frame, tmp.path(), None, 0))?;
-        let buffer = terminal.backend().buffer();
-        let cells = |color| {
-            buffer
-                .content
-                .iter()
-                .filter(|cell| cell.bg == color)
-                .count()
-        };
-        let large = cells(Color::Cyan);
-        let small = cells(Color::Blue);
+        let large = ui.tiles[0].area();
+        let small = ui.tiles[1].area();
         assert_that!(small, gt(0));
         assert_that!(large, eq(small * 3));
         Ok(())
