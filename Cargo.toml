@@ -1,0 +1,21 @@
+[package]
+name = "targetscan"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+clap = { version = "4.6.9", features = ["derive"] }
+color-eyre = "0.6.5"
+crossterm = "0.29.0"
+snafu = "0.9.2"
+spdlog-rs = "0.5.3"
+tuirealm = "4.1.0"
+walkdir = "2.5.1"
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[dev-dependencies]
+tempfile = "3.27.0"
+test-that = "0.6.0"
