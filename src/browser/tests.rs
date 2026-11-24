@@ -232,6 +232,7 @@ fn visible_footer_labels_dispatch_their_shortcuts() -> Result<()> {
         } else {
             vec![
                 ("mark", KeyCode::Char(' ')),
+                ("select all", KeyCode::Char('a')),
                 ("tree/map", KeyCode::Char('t')),
                 ("delete", KeyCode::Char('d')),
                 ("quit", KeyCode::Char('q')),
