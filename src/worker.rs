@@ -1,3 +1,4 @@
+use cgp::prelude::*;
 use color_eyre::Result;
 use std::{
     path::{Path, PathBuf},
@@ -5,12 +6,30 @@ use std::{
 };
 use targetscan::{Error, Scan, delete_output, scan};
 
+#[cgp_component(TargetStore)]
 trait CanManageTargets {
     fn scan(&self, root: &Path) -> Result<Scan, Error>;
     fn remove(&self, root: &Path, path: &Path) -> Result<(), Error>;
 }
 
 struct LocalFilesystem;
+
+#[cgp_impl(new UseLocalFilesystem)]
+impl TargetStore {
+    fn scan(&self, root: &Path) -> Result<Scan, Error> {
+        scan(root)
+    }
+
+    fn remove(&self, root: &Path, path: &Path) -> Result<(), Error> {
+        delete_output(root, path)
+    }
+}
+
+delegate_components! {
+    LocalFilesystem {
+        TargetStoreComponent: UseLocalFilesystem,
+    }
+}
 
 pub(crate) fn work(
     root: PathBuf,
@@ -19,11 +38,15 @@ pub(crate) fn work(
     thread::spawn(move || run(&LocalFilesystem, &root, paths))
 }
 
-fn run<C>(_context: &C, root: &Path, paths: Vec<PathBuf>) -> Result<(Scan, String)> {
+fn run(
+    context: &impl CanManageTargets,
+    root: &Path,
+    paths: Vec<PathBuf>,
+) -> Result<(Scan, String)> {
     let mut deleted = 0;
     let mut errors = Vec::new();
     for path in paths {
-        match delete_output(root, &path) {
+        match context.remove(root, &path) {
             Ok(()) if path == root => {
                 return Ok((
                     Scan::default(),
@@ -34,7 +57,7 @@ fn run<C>(_context: &C, root: &Path, paths: Vec<PathBuf>) -> Result<(Scan, Strin
             Err(e) => errors.push(e.to_string()),
         }
     }
-    let scan = scan(root)?;
+    let scan = context.scan(root)?;
     let mut status = format!("{} found · {} skipped", scan.targets.len(), scan.skipped);
     if deleted > 0 {
         status.push_str(&format!(" · {deleted} deleted"));
