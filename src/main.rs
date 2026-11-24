@@ -110,7 +110,7 @@ impl Browser {
             "Confirm permanent deletion"
         } else {
             if self.tree_view {
-                "Cargo target tree"
+                "Cargo target tree · bar length by file size"
             } else {
                 "Cargo target treemap · area by file size"
             }
@@ -182,7 +182,9 @@ impl Browser {
             }
         } else {
             let rows = paths.iter().enumerate().map(|(i, path)| {
-                let branch = if i + 1 == paths.len() {
+                let branch = if pending.is_none() && i == self.cursor {
+                    "▶─"
+                } else if i + 1 == paths.len() {
                     "└─"
                 } else {
                     "├─"
@@ -214,6 +216,22 @@ impl Browser {
                 tree,
                 &mut self.list,
             );
+            if pending.is_none()
+                && let Some(&largest) = self.scan.bytes.values().max()
+                && largest > 0
+            {
+                // List rendering updates its offset to keep the focused entry visible.
+                let visible = paths.iter().skip(self.list.offset()).zip(tree.rows());
+                for (path, row) in visible {
+                    let bytes = self.scan.bytes[path];
+                    let width = (u128::from(row.width) * u128::from(bytes))
+                        .div_ceil(u128::from(largest)) as u16;
+                    let style = tuirealm::ratatui::style::Style::default()
+                        .black()
+                        .bg(size_color(bytes));
+                    f.buffer_mut().set_style(Rect { width, ..row }, style);
+                }
+            }
         }
         if !paths.is_empty() {
             let (offset, visible) = if self.tiles.is_empty() {
