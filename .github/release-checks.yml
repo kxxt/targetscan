@@ -1,3 +1,3 @@
 - name: Run workspace checks before packaging
-  if: runner.os == 'Linux'
+  if: contains(matrix.targets, 'x86_64-unknown-linux-gnu')
   uses: ./.github/actions/check
