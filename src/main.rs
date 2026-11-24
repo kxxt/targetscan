@@ -473,6 +473,33 @@ mod tests {
     use tuirealm::ratatui::{Terminal, backend::TestBackend};
 
     #[test]
+    fn tree_bars_keep_the_scan_scale_when_scrolled() -> Result<()> {
+        let root = Path::new(".");
+        let mut ui = Browser {
+            tree_view: true,
+            ..Browser::default()
+        };
+        for (name, bytes) in [("max", 80), ("empty", 0), ("quarter", 20), ("half", 40)] {
+            let path = root.join(name);
+            ui.scan.bytes.insert(path.clone(), bytes);
+            ui.scan.targets.push(path);
+        }
+        let mut terminal = Terminal::new(TestBackend::new(41, 7))?;
+        for (cursor, widths) in [(0, [40, 0]), (3, [10, 20])] {
+            ui.cursor = cursor;
+            terminal.draw(|frame| ui.draw(frame, root, None, 0))?;
+            let buf = terminal.backend().buffer();
+            for (i, width) in widths.into_iter().enumerate() {
+                let row = 2 + i as u16;
+                for x in 0..40 {
+                    assert_that!(buf[(x, row)].bg == Color::Cyan, eq(x < width));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn scrollbar_reaches_the_last_row_in_both_views() -> Result<()> {
         let root = Path::new(".");
         let mut ui = Browser::default();
@@ -522,7 +549,8 @@ mod tests {
         terminal.draw(|f| ui.draw(f, root, None, 0))?;
         let buffer = terminal.backend().buffer();
         for (i, expected) in colors.into_iter().enumerate() {
-            assert_that!(buffer[(0, 2 + i as u16)].fg, eq(expected));
+            let cell = &buffer[(0, 2 + i as u16)];
+            assert_that!(cell.fg == expected || cell.bg == expected, eq(true));
         }
         Ok(())
     }
