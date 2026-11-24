@@ -142,6 +142,7 @@ pub(crate) fn run(root: PathBuf) -> Result<()> {
             }
             _ if pending.is_some() => {}
             KeyCode::Char('t') => ui.toggle_view(),
+            KeyCode::Char('a' | 'A') => ui.selected.extend(ui.scan.targets.iter().cloned()),
             KeyCode::Char('q') => break,
             KeyCode::Char('d') | KeyCode::Delete if job.is_none() => ui.request(),
             KeyCode::Char(' ') => {

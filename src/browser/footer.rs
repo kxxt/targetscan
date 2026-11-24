@@ -25,6 +25,7 @@ impl Browser {
             actions.extend([Shortcut("↑ prev", "↑", Up), Shortcut("↓ next", "↓", Down)]);
             if browsing {
                 actions.push(Shortcut("Space mark", "mark", Char(' ')));
+                actions.push(Shortcut("A select all", "all", Char('a')));
             }
         }
         if browsing {
